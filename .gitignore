@@ -1,0 +1,8 @@
+.databricks/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+# Datos: viven en ADLS, no en GitHub
+*.parquet
+datasets/**/*.csv

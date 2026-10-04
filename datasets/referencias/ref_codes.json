@@ -1,0 +1,18 @@
+{"code_type": "vendor", "code": 1, "description": "Creative Mobile Technologies"}
+{"code_type": "vendor", "code": 2, "description": "Curb Mobility"}
+{"code_type": "vendor", "code": 6, "description": "Myle Technologies"}
+{"code_type": "vendor", "code": 7, "description": "Helix"}
+{"code_type": "ratecode", "code": 1, "description": "Tarifa estándar"}
+{"code_type": "ratecode", "code": 2, "description": "JFK"}
+{"code_type": "ratecode", "code": 3, "description": "Newark"}
+{"code_type": "ratecode", "code": 4, "description": "Nassau o Westchester"}
+{"code_type": "ratecode", "code": 5, "description": "Tarifa negociada"}
+{"code_type": "ratecode", "code": 6, "description": "Viaje grupal"}
+{"code_type": "ratecode", "code": 99, "description": "Desconocido"}
+{"code_type": "payment_type", "code": 0, "description": "Tarifa flexible"}
+{"code_type": "payment_type", "code": 1, "description": "Tarjeta de crédito"}
+{"code_type": "payment_type", "code": 2, "description": "Efectivo"}
+{"code_type": "payment_type", "code": 3, "description": "Sin cargo"}
+{"code_type": "payment_type", "code": 4, "description": "Disputa"}
+{"code_type": "payment_type", "code": 5, "description": "Desconocido"}
+{"code_type": "payment_type", "code": 6, "description": "Viaje anulado"}

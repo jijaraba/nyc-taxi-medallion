@@ -1,0 +1,84 @@
+name: CI-CD NYC Taxi Medallion
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - "proceso/**"
+      - "databricks.yml"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # autenticación OIDC: sin tokens guardados
+  contents: read
+
+concurrency:
+  group: nyc-taxi-deploy
+  cancel-in-progress: false
+
+jobs:
+  # 1) Calidad de código y validación del bundle
+  validate:
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verificar sintaxis de notebooks
+        run: python -m compileall -q proceso PrepAmb seguridad reversion
+      - uses: databricks/setup-cli@main
+      - name: Validar bundle (dev)
+        run: databricks bundle validate -t dev
+
+  # 2) Despliegue a DEV (sin ejecutar: el único cómputo que corre es el de prod)
+  deploy_dev:
+    needs: validate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      - name: Deploy dev
+        run: databricks bundle deploy -t dev
+
+  # 3) Despliegue a PROD con aprobación manual + ejecución del workflow
+  deploy_prod:
+    needs: deploy_dev
+    runs-on: ubuntu-latest
+    environment: prod   # Settings > Environments > prod > Required reviewers
+    env:
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      - name: Validar bundle (prod)
+        run: databricks bundle validate -t prod
+      - name: Deploy prod
+        run: databricks bundle deploy -t prod
+      - name: Ejecutar workflow en prod (espera a que termine)
+        run: databricks bundle run -t prod wf_etl_nyc_taxi
+      - name: Resumen
+        if: always()
+        run: |
+          echo "## Despliegue NYC Taxi Medallion" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Resultado: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+
+# Alternativa con token personal (PAT): quitar DATABRICKS_AUTH_TYPE y DATABRICKS_CLIENT_ID y usar
+#   DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}

@@ -1,0 +1,137 @@
+# Databricks Asset Bundle: el workflow como código, desplegado en dev y prod.
+bundle:
+  name: nyc_taxi_medallion
+
+# Solo se despliega la carpeta `proceso` (regla del proyecto)
+sync:
+  exclude:
+    - "PrepAmb/**"
+    - "seguridad/**"
+    - "reversion/**"
+    - "datasets/**"
+    - "dashboard/**"
+    - "evidencias/**"
+    - "certificaciones/**"
+    - "*.md"
+
+variables:
+  catalog:
+    description: Catálogo de Unity Catalog del ambiente
+  storage_account:
+    description: Nombre del ADLS Gen2
+    default: <storage_account>
+  months:
+    description: Meses a procesar (YYYY-MM separados por coma)
+    default: "2024-12,2025-01,2025-02"
+  notification_email:
+    description: Correo para alertas de fallo
+    default: tu_correo@dominio.com
+  export_sql:
+    description: Exportar Gold a Azure SQL (true/false)
+    default: "false"
+
+resources:
+  jobs:
+    wf_etl_nyc_taxi:
+      name: WF_${bundle.target}_ETL_NYC_TAXI
+      max_concurrent_runs: 1
+      timeout_seconds: 14400
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+      schedule:
+        # día 15 de cada mes: la TLC publica con ~2 meses de retraso
+        quartz_cron_expression: "0 0 6 15 * ?"
+        timezone_id: America/Bogota
+        pause_status: UNPAUSED   # el modo development de dev lo pausa automáticamente
+      # Parámetros de job: llegan a todos los notebooks como widgets
+      parameters:
+        - name: p_catalog
+          default: ${var.catalog}
+        - name: p_storage_account
+          default: ${var.storage_account}
+        - name: p_months
+          default: ${var.months}
+        - name: p_run_id
+          default: "{{job.run_id}}"
+        - name: p_export_sql
+          default: ${var.export_sql}
+      # Sin cluster definido => cómputo serverless (solo existe mientras corre el job)
+      tasks:
+        - task_key: prep_ambiente
+          notebook_task:
+            notebook_path: ./proceso/00_prep_ambiente.py
+
+        - task_key: ingest_trips
+          depends_on: [{task_key: prep_ambiente}]
+          max_retries: 1
+          notebook_task:
+            notebook_path: ./proceso/01_ingest_trips.py
+
+        - task_key: ingest_zones
+          depends_on: [{task_key: prep_ambiente}]
+          max_retries: 1
+          notebook_task:
+            notebook_path: ./proceso/01_ingest_zones.py
+
+        - task_key: ingest_reference
+          depends_on: [{task_key: prep_ambiente}]
+          max_retries: 1
+          notebook_task:
+            notebook_path: ./proceso/01_ingest_reference.py
+
+        - task_key: ingest_weather
+          depends_on: [{task_key: prep_ambiente}]
+          max_retries: 2
+          min_retry_interval_millis: 60000
+          notebook_task:
+            notebook_path: ./proceso/01_ingest_weather.py
+
+        - task_key: transform_dimensiones
+          depends_on:
+            - task_key: ingest_zones
+            - task_key: ingest_reference
+            - task_key: ingest_weather
+          notebook_task:
+            notebook_path: ./proceso/02_transform_dimensiones.py
+
+        - task_key: transform_trips
+          depends_on:
+            - task_key: ingest_trips
+            - task_key: transform_dimensiones
+          notebook_task:
+            notebook_path: ./proceso/02_transform_trips.py
+
+        - task_key: load_gold
+          depends_on: [{task_key: transform_trips}]
+          notebook_task:
+            notebook_path: ./proceso/03_load_gold.py
+
+        - task_key: export_azure_sql
+          depends_on: [{task_key: load_gold}]
+          notebook_task:
+            notebook_path: ./proceso/04_export_azure_sql.py
+
+        - task_key: grants
+          depends_on: [{task_key: load_gold}]
+          notebook_task:
+            notebook_path: ./proceso/05_grants.py
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://adb-XXXXXXXXXXXXXXXX.X.azuredatabricks.net   # workspace DEV
+    variables:
+      catalog: nyc_taxi_dev
+
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-YYYYYYYYYYYYYYYY.Y.azuredatabricks.net   # workspace PROD
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: nyc_taxi_prod
+    run_as:
+      service_principal_name: 00000000-0000-0000-0000-000000000000   # application ID del SP
