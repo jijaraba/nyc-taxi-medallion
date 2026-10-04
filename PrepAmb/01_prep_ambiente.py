@@ -123,7 +123,8 @@ if not pipeline_sp.startswith("<"):
     grant("external_location", "extl_raw", pipeline_sp, ["READ_FILES", "WRITE_FILES"])
     for container in ["bronze", "silver", "gold", "catalog"]:
         grant("external_location", f"extl_{container}", pipeline_sp, ["CREATE_MANAGED_STORAGE", "READ_FILES", "WRITE_FILES"])
-    grant("catalog", "nyc_taxi_prod", pipeline_sp, ["ALL_PRIVILEGES"])
+    # ALL_PRIVILEGES no incluye MANAGE: sin MANAGE el SP no puede otorgar permisos (tarea grants)
+    grant("catalog", "nyc_taxi_prod", pipeline_sp, ["ALL_PRIVILEGES", "MANAGE"])
 
 # COMMAND ----------
 
