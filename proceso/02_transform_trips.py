@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # 02 · Silver: fact_trips
 # MAGIC Por cada mes de `p_months` toma `bronze.yellow_trips` y produce `silver.fact_trips`:

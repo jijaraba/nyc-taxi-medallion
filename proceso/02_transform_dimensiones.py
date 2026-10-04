@@ -1,9 +1,12 @@
 # Databricks notebook source
 # /// script
 # [tool.databricks.environment]
-# base_environment = "databricks_ai_v5"
-# environment_version = "5"
+# environment_version = "6"
 # ///
+
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # 02 · Silver: dimensiones
 # MAGIC - `silver.dim_zone`: zonas con nombres normalizados y banderas (aeropuerto, zona amarilla, desconocida).
