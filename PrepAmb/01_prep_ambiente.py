@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # PrepAmb · Preparación del ambiente (admin, una sola vez)
 # MAGIC Crea con **Python** (Databricks SDK, sin SQL):

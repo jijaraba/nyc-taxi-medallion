@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # Seguridad · grupos y grants (Python, Databricks SDK)
 # MAGIC 1. Crear los grupos a nivel de **cuenta** (Account console → User management → Groups):

@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "1"
+# ///
 # MAGIC %md
 # MAGIC # 00 · Preparación del ambiente (en cada ejecución del workflow)
 # MAGIC Idempotente y 100 % Python:

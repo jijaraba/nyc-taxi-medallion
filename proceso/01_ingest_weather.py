@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # 01 · Ingesta Bronze: clima diario (API REST)
 # MAGIC 1. Llama a la API pública **Open-Meteo Historical Weather** (sin API key) para el rango de `p_months`.
@@ -20,7 +24,7 @@ import time
 import requests
 
 catalog = get_param("p_catalog", "nyc_taxi_dev")
-storage_account = get_param("p_storage_account", "<storage_account>")
+storage_account = get_param("p_storage_account", "stnyctaxidev02")
 run_id = get_param("p_run_id", "manual")
 months = parse_months(get_param("p_months", "2024-12,2025-01,2025-02"))
 

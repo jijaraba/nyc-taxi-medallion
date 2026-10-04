@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # 01 · Ingesta Bronze: códigos de referencia (JSON)
 # MAGIC `raw/nyc_taxi/reference/ref_codes.json` → `bronze.ref_codes`
@@ -13,7 +17,7 @@
 # COMMAND ----------
 
 catalog = get_param("p_catalog", "nyc_taxi_dev")
-storage_account = get_param("p_storage_account", "<storage_account>")
+storage_account = get_param("p_storage_account", "stnyctaxidev02")
 run_id = get_param("p_run_id", "manual")
 
 schema = StructType([

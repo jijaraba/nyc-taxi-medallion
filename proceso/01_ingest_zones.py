@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # 01 · Ingesta Bronze: zonas de taxi
 # MAGIC `raw/nyc_taxi/taxi_zones/taxi_zone_lookup.csv` → `bronze.taxi_zones`
@@ -13,7 +17,7 @@
 # COMMAND ----------
 
 catalog = get_param("p_catalog", "nyc_taxi_dev")
-storage_account = get_param("p_storage_account", "<storage_account>")
+storage_account = get_param("p_storage_account", "stnyctaxidev02")
 run_id = get_param("p_run_id", "manual")
 source_format = get_param("p_source_format", "csv")
 

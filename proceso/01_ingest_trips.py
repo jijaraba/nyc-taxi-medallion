@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # 01 · Ingesta Bronze: viajes de taxi amarillo
 # MAGIC `raw/nyc_taxi/yellow/yellow_tripdata_YYYY-MM.parquet` → `bronze.yellow_trips`
