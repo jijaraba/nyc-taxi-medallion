@@ -19,13 +19,13 @@ variables:
     description: Catálogo de Unity Catalog del ambiente
   storage_account:
     description: Nombre del ADLS Gen2
-    default: <storage_account>
+    default: stnyctaxidev02
   months:
     description: Meses a procesar (YYYY-MM separados por coma)
     default: "2024-12,2025-01,2025-02"
   notification_email:
     description: Correo para alertas de fallo
-    default: tu_correo@dominio.com
+    default: jijaraba@hotmail.com
   export_sql:
     description: Exportar Gold a Azure SQL (true/false)
     default: "false"
@@ -122,16 +122,16 @@ targets:
     mode: development
     default: true
     workspace:
-      host: https://adb-XXXXXXXXXXXXXXXX.X.azuredatabricks.net   # workspace DEV
+      host: https://adb-7405604597390953.13.azuredatabricks.net/   # workspace DEV
     variables:
       catalog: nyc_taxi_dev
 
   prod:
     mode: production
     workspace:
-      host: https://adb-YYYYYYYYYYYYYYYY.Y.azuredatabricks.net   # workspace PROD
+      host: https://adb-7405609525387460.0.azuredatabricks.net/   # workspace PROD
       root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
     variables:
       catalog: nyc_taxi_prod
     run_as:
-      service_principal_name: 00000000-0000-0000-0000-000000000000   # application ID del SP
+      service_principal_name: a9978e5a-01d4-4bce-9e0c-38a566ec4251   # application ID del SP
