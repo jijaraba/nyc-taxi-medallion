@@ -3,6 +3,10 @@
 # [tool.databricks.environment]
 # environment_version = "6"
 # ///
+
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # 02 · Silver: fact_trips
 # MAGIC Por cada mes de `p_months` toma `bronze.yellow_trips` y produce `silver.fact_trips`:
@@ -108,22 +112,30 @@ fact_trips = enriched.dropDuplicates(["trip_id"]).select(
 
 replace_partitions(fact_trips, f"{catalog}.silver.fact_trips", "source_year_month", months)
 
-# Compacta archivos y agrupa por zona de origen (filtro más común en Gold y en el dashboard)
-DeltaTable.forName(spark, f"{catalog}.silver.fact_trips").optimize().executeZOrderBy("pu_location_id")
+# Compacta archivos y agrupa por zona de origen (filtro más común en Gold y en el dashboard).
+# Es mantenimiento, no lógica de negocio: si el cómputo no lo permite, el pipeline continúa
+# (en Unity Catalog la optimización predictiva también compacta las tablas administradas).
+try:
+    DeltaTable.forName(spark, f"{catalog}.silver.fact_trips").optimize().executeZOrderBy("pu_location_id")
+    print("OPTIMIZE + ZORDER aplicado a silver.fact_trips")
+except Exception as e:
+    print(f"[aviso] OPTIMIZE omitido: {str(e)[:300]}")
 
 # COMMAND ----------
 
 written = spark.table(f"{catalog}.silver.fact_trips").filter(F.col("source_year_month").isin(months))
-metrics = {
-    "bronze_rows": trips.count(),
-    "silver_rows": written.count(),
-    "suspicious_rows": written.filter("is_suspicious").count(),
-    "airport_trips": written.filter("is_airport_trip").count(),
-    "trips_with_cbd_fee": written.filter("has_cbd_fee").count(),
-}
+
+# Todas las métricas en una sola agregación (un solo job en lugar de uno por métrica)
+counts = written.agg(
+    F.count("*").alias("silver_rows"),
+    F.sum(F.col("is_suspicious").cast("int")).alias("suspicious_rows"),
+    F.sum(F.col("is_airport_trip").cast("int")).alias("airport_trips"),
+    F.sum(F.col("has_cbd_fee").cast("int")).alias("trips_with_cbd_fee"),
+    *[F.sum(F.col(c).cast("int")).alias(c) for c in flag_cols],
+).first().asDict()
+
+metrics = {"bronze_rows": trips.count(), **{k: int(v or 0) for k, v in counts.items()}}
 metrics["duplicates_removed"] = metrics["bronze_rows"] - metrics["silver_rows"]
-for c in flag_cols:
-    metrics[c] = written.filter(F.col(c)).count()
 
 log_metrics(catalog, run_id, "silver", "fact_trips", metrics)
 dbutils.notebook.exit(json.dumps(metrics))
