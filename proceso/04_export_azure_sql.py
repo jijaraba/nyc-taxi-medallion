@@ -1,4 +1,12 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
+
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # 04 · (Opcional) Exportar Gold a Azure SQL Database
 # MAGIC Publica las tablas Gold en Azure SQL para Power BI u otras aplicaciones. Credenciales desde un

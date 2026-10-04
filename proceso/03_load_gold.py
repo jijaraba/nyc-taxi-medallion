@@ -1,4 +1,12 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
+
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # 03 · Gold: tablas de negocio
 # MAGIC Se recalculan sobre todos los meses cargados. Los promedios usan solo viajes **no sospechosos**;
@@ -78,7 +86,7 @@ hourly = trips.groupBy("pickup_day_of_week", "pickup_hour").agg(
 total_trips = trips.count()
 hourly_demand = (
     hourly.withColumn("day_name", day_map[F.col("pickup_day_of_week")])
-    .withColumn("share_pct", F.round(F.col("trips") * 100 / F.lit(total_trips), 3))
+    .withColumn("share_pct", F.round(F.try_divide(F.col("trips") * 100, F.lit(total_trips)), 3))
     .withColumn("rank_busiest", F.dense_rank().over(Window.orderBy(F.desc("trips"))))
 )
 overwrite_table(hourly_demand, f"{catalog}.gold.hourly_demand")
@@ -93,7 +101,7 @@ overwrite_table(hourly_demand, f"{catalog}.gold.hourly_demand")
 zone_performance = (
     trips.groupBy("pu_location_id", "pu_borough", "pu_zone")
     .agg(*base_aggs, F.round(F.avg(F.col("is_airport_trip").cast("int")) * 100, 2).alias("airport_trips_pct"))
-    .withColumn("share_trips_pct", F.round(F.col("trips") * 100 / F.lit(total_trips), 3))
+    .withColumn("share_trips_pct", F.round(F.try_divide(F.col("trips") * 100, F.lit(total_trips)), 3))
     .withColumn("rank_in_borough", F.dense_rank().over(Window.partitionBy("pu_borough").orderBy(F.desc("trips"))))
     .withColumn("rank_overall", F.dense_rank().over(Window.orderBy(F.desc("trips"))))
 )
@@ -113,7 +121,8 @@ routes = (
         F.count("*").alias("trips"),
         F.round(F.avg("duration_min"), 2).alias("avg_duration_min"),
         F.round(F.avg("total_amount"), 2).alias("avg_total_amount"),
-        F.round(F.sum("fare_amount") / F.sum("trip_distance"), 2).alias("fare_per_mile"),
+        # try_divide: si la distancia total es 0 devuelve null en vez de fallar (serverless usa modo ANSI)
+        F.round(F.try_divide(F.sum("fare_amount"), F.sum("trip_distance")), 2).alias("fare_per_mile"),
     )
     .withColumn("rank_in_borough", F.row_number().over(Window.partitionBy("pu_borough").orderBy(F.desc("trips"))))
     .filter(F.col("rank_in_borough") <= top_routes_per_borough)
@@ -135,7 +144,7 @@ payment_tips = (
         avg_clean("tip_pct", "avg_tip_pct"),
     )
     .withColumn("share_in_borough_pct",
-                F.round(F.col("trips") * 100 / F.sum("trips").over(Window.partitionBy("pu_borough")), 2))
+                F.round(F.try_divide(F.col("trips") * 100, F.sum("trips").over(Window.partitionBy("pu_borough"))), 2))
 )
 overwrite_table(payment_tips, f"{catalog}.gold.payment_tips")
 
@@ -161,9 +170,10 @@ congestion = trips.groupBy("source_year_month").agg(
 w_month = Window.orderBy("source_year_month")
 congestion_pricing_monthly = (
     congestion
-    .withColumn("cbd_fee_trips_pct", F.round(F.col("trips_with_cbd_fee") * 100 / F.col("trips"), 2))
+    .withColumn("cbd_fee_trips_pct", F.round(F.try_divide(F.col("trips_with_cbd_fee") * 100, F.col("trips")), 2))
     .withColumn("trips_change_pct",
-                F.round((F.col("trips") - F.lag("trips").over(w_month)) * 100 / F.lag("trips").over(w_month), 2))
+                F.round(F.try_divide((F.col("trips") - F.lag("trips").over(w_month)) * 100,
+                                     F.lag("trips").over(w_month)), 2))
     .withColumn("period", F.when(F.col("source_year_month") >= "2025-01", "con cobro").otherwise("sin cobro"))
 )
 overwrite_table(congestion_pricing_monthly, f"{catalog}.gold.congestion_pricing_monthly")

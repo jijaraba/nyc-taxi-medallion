@@ -1,4 +1,12 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
+
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # 05 · Grants (mínimo privilegio) con Databricks SDK
 # MAGIC | Grupo | Acceso |
