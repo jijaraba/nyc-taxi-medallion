@@ -11,12 +11,15 @@
 # MAGIC # 05 · Grants (mínimo privilegio) con Databricks SDK
 # MAGIC | Grupo | Acceso |
 # MAGIC |---|---|
-# MAGIC | `p_group_engineers` | Lectura de todo el catálogo y de raw. En prod no escribe: solo el pipeline modifica datos |
+# MAGIC | `p_group_engineers` | Lectura de todo el catálogo. En prod no escribe: solo el pipeline modifica datos |
 # MAGIC | `p_group_analysts` | Lectura de Silver y Gold |
 # MAGIC | `p_group_bi` | Solo tablas Gold |
 # MAGIC
 # MAGIC Los permisos de Unity Catalog se heredan (catálogo → esquema → tabla). La API de permisos con
 # MAGIC `add` es idempotente: re-ejecutar no duplica ni borra permisos existentes.
+# MAGIC
+# MAGIC **Requisito:** quien ejecuta (en prod, el service principal del pipeline) necesita `MANAGE` sobre el
+# MAGIC catálogo. `ALL PRIVILEGES` **no** incluye `MANAGE`; lo otorga `PrepAmb/01_prep_ambiente.py`.
 
 # COMMAND ----------
 
@@ -51,9 +54,10 @@ def grant(securable_type: str, full_name: str, principal: str, privileges: list)
 # COMMAND ----------
 
 plan = [
-    # Ingenieros: lectura total + lectura de archivos en raw
+    # Ingenieros: lectura total del catálogo.
+    # (El acceso a archivos de raw es infraestructura: lo otorga un admin con seguridad/01_grupos_y_grants.py,
+    #  así el pipeline no necesita permisos de administración sobre las external locations.)
     ("catalog", catalog, eng, ["USE_CATALOG", "USE_SCHEMA", "SELECT"]),
-    ("external_location", "extl_raw", eng, ["READ_FILES"]),
     # Analistas: Silver y Gold
     ("catalog", catalog, analysts, ["USE_CATALOG"]),
     ("schema", f"{catalog}.silver", analysts, ["USE_SCHEMA", "SELECT"]),
