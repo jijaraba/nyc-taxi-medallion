@@ -21,6 +21,10 @@
 # MAGIC | `gold.payment_tips` | ¿Cómo pagan los pasajeros y cuánto dejan de propina? |
 # MAGIC | `gold.congestion_pricing_monthly` | ¿Qué efecto tuvo el cobro por congestión (desde el 5-ene-2025)? |
 # MAGIC | `gold.weather_impact` | ¿La lluvia y la nieve cambian la demanda y las propinas? |
+# MAGIC
+# MAGIC **Compatibilidad con serverless:** el cómputo serverless ejecuta Spark en **modo ANSI**, donde una
+# MAGIC división entre cero detiene el notebook. Por eso todas las divisiones usan `F.try_divide`, que
+# MAGIC devuelve `null` cuando el divisor es 0.
 
 # COMMAND ----------
 
@@ -33,13 +37,23 @@ run_id = get_param("p_run_id", "manual")
 top_routes_per_borough = int(get_param("p_top_routes", "20"))
 
 trips = spark.table(f"{catalog}.silver.fact_trips")
-clean = F.col("is_suspicious") == False  # noqa: E712
 dim_date = spark.table(f"{catalog}.silver.dim_date")
+
+total_trips = trips.count()
+if total_trips == 0:
+    dbutils.notebook.exit("silver.fact_trips está vacía: ejecutar primero 02_transform_trips")
+
+clean = ~F.col("is_suspicious")
 
 
 def avg_clean(col_name: str, alias: str, digits: int = 2) -> Column:
     """Promedio calculado solo sobre viajes no sospechosos."""
     return F.round(F.avg(F.when(clean, F.col(col_name))), digits).alias(alias)
+
+
+def pct(numerator: Column, denominator: Column, digits: int = 2) -> Column:
+    """Porcentaje seguro en modo ANSI: null si el denominador es 0."""
+    return F.round(F.try_divide(numerator * F.lit(100.0), denominator), digits)
 
 
 base_aggs = [
@@ -51,6 +65,9 @@ base_aggs = [
     avg_clean("tip_pct", "avg_tip_pct"),
 ]
 
+DAY_NAMES = {1: "domingo", 2: "lunes", 3: "martes", 4: "miércoles", 5: "jueves", 6: "viernes", 7: "sábado"}
+day_map = F.create_map(*[F.lit(x) for kv in DAY_NAMES.items() for x in kv])
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -61,9 +78,12 @@ base_aggs = [
 trips_daily = (
     trips.groupBy("pickup_date", "pu_borough").agg(*base_aggs)
     .join(
-        dim_date.select(F.col("date").alias("pickup_date"), "day_name", "is_weekend", "weather_condition",
-                        "temperature_max_c", "temperature_min_c", "precipitation_mm", "snowfall_cm"),
-        "pickup_date", "left",
+        dim_date.select(
+            F.col("date").alias("pickup_date"), "day_name", "is_weekend", "weather_condition",
+            "temperature_max_c", "temperature_min_c", "precipitation_mm", "snowfall_cm",
+        ),
+        "pickup_date",
+        "left",
     )
 )
 overwrite_table(trips_daily, f"{catalog}.gold.trips_daily")
@@ -75,18 +95,15 @@ overwrite_table(trips_daily, f"{catalog}.gold.trips_daily")
 
 # COMMAND ----------
 
-DAY_NAMES = {1: "domingo", 2: "lunes", 3: "martes", 4: "miércoles", 5: "jueves", 6: "viernes", 7: "sábado"}
-day_map = F.create_map(*[F.lit(x) for kv in DAY_NAMES.items() for x in kv])
-
-hourly = trips.groupBy("pickup_day_of_week", "pickup_hour").agg(
-    F.count("*").alias("trips"),
-    avg_clean("avg_speed_mph", "avg_speed_mph"),
-    avg_clean("total_amount", "avg_total_amount"),
-)
-total_trips = trips.count()
 hourly_demand = (
-    hourly.withColumn("day_name", day_map[F.col("pickup_day_of_week")])
-    .withColumn("share_pct", F.round(F.try_divide(F.col("trips") * 100, F.lit(total_trips)), 3))
+    trips.groupBy("pickup_day_of_week", "pickup_hour")
+    .agg(
+        F.count("*").alias("trips"),
+        avg_clean("avg_speed_mph", "avg_speed_mph"),
+        avg_clean("total_amount", "avg_total_amount"),
+    )
+    .withColumn("day_name", day_map[F.col("pickup_day_of_week")])
+    .withColumn("share_pct", pct(F.col("trips"), F.lit(total_trips), 3))
     .withColumn("rank_busiest", F.dense_rank().over(Window.orderBy(F.desc("trips"))))
 )
 overwrite_table(hourly_demand, f"{catalog}.gold.hourly_demand")
@@ -101,7 +118,7 @@ overwrite_table(hourly_demand, f"{catalog}.gold.hourly_demand")
 zone_performance = (
     trips.groupBy("pu_location_id", "pu_borough", "pu_zone")
     .agg(*base_aggs, F.round(F.avg(F.col("is_airport_trip").cast("int")) * 100, 2).alias("airport_trips_pct"))
-    .withColumn("share_trips_pct", F.round(F.try_divide(F.col("trips") * 100, F.lit(total_trips)), 3))
+    .withColumn("share_trips_pct", pct(F.col("trips"), F.lit(total_trips), 3))
     .withColumn("rank_in_borough", F.dense_rank().over(Window.partitionBy("pu_borough").orderBy(F.desc("trips"))))
     .withColumn("rank_overall", F.dense_rank().over(Window.orderBy(F.desc("trips"))))
 )
@@ -114,20 +131,20 @@ overwrite_table(zone_performance, f"{catalog}.gold.zone_performance")
 
 # COMMAND ----------
 
-routes = (
+top_routes = (
     trips.filter(clean)
     .groupBy("pu_borough", "pu_zone", "do_borough", "do_zone")
     .agg(
         F.count("*").alias("trips"),
         F.round(F.avg("duration_min"), 2).alias("avg_duration_min"),
         F.round(F.avg("total_amount"), 2).alias("avg_total_amount"),
-        # try_divide: si la distancia total es 0 devuelve null en vez de fallar (serverless usa modo ANSI)
+        # rutas con distancia total 0 dan null en lugar de un error de división entre cero
         F.round(F.try_divide(F.sum("fare_amount"), F.sum("trip_distance")), 2).alias("fare_per_mile"),
     )
     .withColumn("rank_in_borough", F.row_number().over(Window.partitionBy("pu_borough").orderBy(F.desc("trips"))))
     .filter(F.col("rank_in_borough") <= top_routes_per_borough)
 )
-overwrite_table(routes, f"{catalog}.gold.top_routes")
+overwrite_table(top_routes, f"{catalog}.gold.top_routes")
 
 # COMMAND ----------
 
@@ -144,7 +161,7 @@ payment_tips = (
         avg_clean("tip_pct", "avg_tip_pct"),
     )
     .withColumn("share_in_borough_pct",
-                F.round(F.try_divide(F.col("trips") * 100, F.sum("trips").over(Window.partitionBy("pu_borough"))), 2))
+                pct(F.col("trips"), F.sum("trips").over(Window.partitionBy("pu_borough"))))
 )
 overwrite_table(payment_tips, f"{catalog}.gold.payment_tips")
 
@@ -158,22 +175,23 @@ overwrite_table(payment_tips, f"{catalog}.gold.payment_tips")
 # COMMAND ----------
 
 manhattan = F.col("pu_borough") == "Manhattan"
-congestion = trips.groupBy("source_year_month").agg(
-    F.count("*").alias("trips"),
-    F.sum(F.col("has_cbd_fee").cast("int")).alias("trips_with_cbd_fee"),
-    F.round(F.sum("cbd_congestion_fee"), 2).alias("cbd_fee_revenue"),
-    F.round(F.sum("total_amount"), 2).alias("revenue"),
-    avg_clean("total_amount", "avg_total_amount"),
-    F.round(F.avg(F.when(clean & manhattan, F.col("avg_speed_mph"))), 2).alias("avg_speed_manhattan_mph"),
-    F.round(F.avg(F.when(clean & manhattan, F.col("duration_min"))), 2).alias("avg_duration_manhattan_min"),
-)
 w_month = Window.orderBy("source_year_month")
+
 congestion_pricing_monthly = (
-    congestion
-    .withColumn("cbd_fee_trips_pct", F.round(F.try_divide(F.col("trips_with_cbd_fee") * 100, F.col("trips")), 2))
-    .withColumn("trips_change_pct",
-                F.round(F.try_divide((F.col("trips") - F.lag("trips").over(w_month)) * 100,
-                                     F.lag("trips").over(w_month)), 2))
+    trips.groupBy("source_year_month")
+    .agg(
+        F.count("*").alias("trips"),
+        F.sum(F.col("has_cbd_fee").cast("int")).alias("trips_with_cbd_fee"),
+        F.round(F.sum("cbd_congestion_fee"), 2).alias("cbd_fee_revenue"),
+        F.round(F.sum("total_amount"), 2).alias("revenue"),
+        avg_clean("total_amount", "avg_total_amount"),
+        F.round(F.avg(F.when(clean & manhattan, F.col("avg_speed_mph"))), 2).alias("avg_speed_manhattan_mph"),
+        F.round(F.avg(F.when(clean & manhattan, F.col("duration_min"))), 2).alias("avg_duration_manhattan_min"),
+    )
+    .withColumn("cbd_fee_trips_pct", pct(F.col("trips_with_cbd_fee"), F.col("trips")))
+    .withColumn("prev_trips", F.lag("trips").over(w_month))
+    .withColumn("trips_change_pct", pct(F.col("trips") - F.col("prev_trips"), F.col("prev_trips")))
+    .drop("prev_trips")
     .withColumn("period", F.when(F.col("source_year_month") >= "2025-01", "con cobro").otherwise("sin cobro"))
 )
 overwrite_table(congestion_pricing_monthly, f"{catalog}.gold.congestion_pricing_monthly")
@@ -186,7 +204,8 @@ overwrite_table(congestion_pricing_monthly, f"{catalog}.gold.congestion_pricing_
 # COMMAND ----------
 
 daily_city = (
-    trips.groupBy("pickup_date").agg(F.count("*").alias("trips"), avg_clean("tip_pct", "avg_tip_pct"))
+    trips.groupBy("pickup_date")
+    .agg(F.count("*").alias("trips"), avg_clean("tip_pct", "avg_tip_pct"))
     .join(dim_date.select(F.col("date").alias("pickup_date"), "weather_condition", "is_weekend"), "pickup_date")
 )
 weather_impact = daily_city.groupBy("weather_condition", "is_weekend").agg(
